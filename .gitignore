@@ -1,0 +1,25 @@
+# Build output
+build/bin/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+
+# Frontend
+frontend/dist/
+node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+
+# Core internal packages (proprietary)
+internal/counter/
+internal/store/
+internal/traedb/
+internal/native/
