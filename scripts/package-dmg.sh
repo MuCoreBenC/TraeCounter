@@ -21,7 +21,6 @@ APP_BUNDLE_NAME="Trae对话计数.app"
 APP_DIR="dist/darwin/${APP_BUNDLE_NAME}"
 DMG_NAME="Trae对话计数-${VERSION}"
 DMG_PATH="${DMG_NAME}.dmg"
-QUARANTINE_SCRIPT="build/dmg/修复应用损坏.command"
 
 echo "========================================="
 echo "  ${APP_DISPLAY_NAME} v${VERSION} — DMG Packaging"
@@ -59,7 +58,7 @@ MOUNT_DIR=$(echo "${MOUNT_OUTPUT}" | grep '/Volumes/' | head -1 | sed 's|^.*\(/V
 
 echo "  Mounted at: ${MOUNT_DIR}"
 
-# Copy app, Applications symlink, background, and quarantine script
+# Copy app, Applications symlink, and background
 cp -R "${APP_DIR}" "${MOUNT_DIR}/"
 ln -s /Applications "${MOUNT_DIR}/Applications"
 
@@ -67,10 +66,6 @@ ln -s /Applications "${MOUNT_DIR}/Applications"
 DMG_BACKGROUND="build/dmg/background.png"
 if [ -f "${DMG_BACKGROUND}" ]; then
     cp "${DMG_BACKGROUND}" "${MOUNT_DIR}/.background.png"
-fi
-
-if [ -f "${QUARANTINE_SCRIPT}" ]; then
-    cp "${QUARANTINE_SCRIPT}" "${MOUNT_DIR}/"
 fi
 
 # Set Finder window layout
@@ -91,11 +86,8 @@ tell application "Finder"
         try
             set background picture of theViewOptions to file ".background.png"
         end try
-        set position of item "'"${APP_BUNDLE_NAME}"'" of container window to {160, 100}
-        set position of item "Applications" of container window to {460, 100}
-        try
-            set position of item "修复应用损坏.command" of container window to {460, 280}
-        end try
+        set position of item "'"${APP_BUNDLE_NAME}"'" of container window to {160, 160}
+        set position of item "Applications" of container window to {460, 160}
         close
         open
         update without registering applications

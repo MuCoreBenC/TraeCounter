@@ -23,9 +23,24 @@
 
 ## 安装方式
 
-1. 从 [GitHub Release](https://github.com/) 下载最新版 DMG
+1. 从 [GitHub Release](https://github.com/MuCoreBenC/TraeCounter/releases) 下载最新版 DMG
 2. 打开 DMG，将应用拖拽到 Applications 文件夹
-3. 如遇"应用已损坏"提示，运行 DMG 中的"修复应用损坏.command"
+3. 首次打开时，macOS 可能提示"无法验证开发者"或"应用已损坏"，这是正常现象（应用未签名），请按以下步骤操作：
+
+### 解决"应用已损坏"提示
+
+打开终端（Terminal），复制粘贴以下命令并回车（需要输入电脑登录密码）：
+
+```bash
+sudo xattr -r -d com.apple.quarantine /Applications/Trae对话计数.app
+```
+
+执行后即可正常打开应用。
+
+> 如果从 DMG 中直接双击应用也提示损坏，可先执行：
+> ```bash
+> xattr -d com.apple.quarantine "/Volumes/Trae 对话计数/Trae对话计数.app"
+> ```
 
 ## 关于本项目的开源方式
 
