@@ -23,13 +23,14 @@ import (
 )
 
 type App struct {
-	ctx           context.Context
-	counter       *counter.Counter
-	store         *store.Store
-	lastSavedUser string
-	lastSavedData string
-	switchTarget  string // Set by SwitchUser, tells autoSaveOnStorageChange to trust this user ID
-	saveMu        sync.Mutex
+	ctx            context.Context
+	counter        *counter.Counter
+	store          *store.Store
+	lastSavedUser  string
+	lastSavedData  string
+	switchTarget   string // Set by SwitchUser, tells autoSaveOnStorageChange to trust this user ID
+	saveMu         sync.Mutex
+	rolloverCancel context.CancelFunc // 取消跨天定时器
 }
 
 func NewApp() *App {
@@ -90,6 +91,11 @@ func (a *App) startup(ctx context.Context) {
 
 	// Start auto refresh (event-driven via fsnotify, no polling)
 	a.counter.StartAutoRefresh()
+
+	// Start day rollover watcher (adaptive interval timer for midnight reset)
+	rolloverCtx, rolloverCancel := context.WithCancel(context.Background())
+	a.rolloverCancel = rolloverCancel
+	go a.watchDayRollover(rolloverCtx)
 
 	// Watch storage.json for credential changes (e.g. user logs in/out in Trae)
 	go a.watchStorageJSON()
@@ -167,12 +173,77 @@ func (a *App) quit() {
 
 func (a *App) shutdown(ctx context.Context) {
 	a.saveWindowSize()
+	if a.rolloverCancel != nil {
+		a.rolloverCancel()
+	}
 	if a.counter != nil {
 		a.counter.Stop()
 	}
 	if a.store != nil {
 		a.store.Close()
 	}
+}
+
+// watchDayRollover monitors for date changes and triggers a display refresh
+// when the day rolls over (at midnight). It uses an adaptive interval timer
+// to minimize CPU wake-ups: far from midnight it checks every hour; as
+// midnight approaches, the interval shortens to 10min, 5min, 1min, and
+// finally 10sec in the last minute to ensure a timely reset.
+func (a *App) watchDayRollover(ctx context.Context) {
+	lastDate := time.Now().Format("2006-01-02")
+
+	for {
+		// Calculate time until next midnight (00:00 local time)
+		now := time.Now()
+		nextMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Add(24 * time.Hour)
+		remaining := time.Until(nextMidnight)
+
+		// Choose interval based on remaining time until midnight
+		var interval time.Duration
+		switch {
+		case remaining > time.Hour:
+			interval = time.Hour
+		case remaining > 10*time.Minute:
+			interval = 10 * time.Minute
+		case remaining > 5*time.Minute:
+			interval = 5 * time.Minute
+		case remaining > time.Minute:
+			interval = time.Minute
+		default:
+			interval = 10 * time.Second
+		}
+
+		// Don't wait longer than the remaining time (avoids overshooting midnight)
+		if interval > remaining && remaining > 0 {
+			interval = remaining
+		}
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			// Check if the date has changed
+			currentDate := time.Now().Format("2006-01-02")
+			if currentDate != lastDate {
+				lastDate = currentDate
+				a.refreshDisplayForDayRollover()
+			}
+		}
+	}
+}
+
+// refreshDisplayForDayRollover triggers a display refresh so the status bar
+// and Touch Bar show the new day's count (typically 0 if no new messages yet).
+func (a *App) refreshDisplayForDayRollover() {
+	lastActiveUID, _ := a.store.GetAppState("last_active_user")
+	if lastActiveUID != "" {
+		// SendSelectedUserCount reads today's count and triggers onUpdate callback,
+		// which updates status bar and Touch Bar
+		a.counter.SendSelectedUserCount(lastActiveUID)
+	}
+	log.Printf("[app] day rollover detected, display refreshed for user %s", lastActiveUID)
 }
 
 // TodayCountResult is the result struct for GetTodayCount.
@@ -653,8 +724,14 @@ func (a *App) autoSaveOnStorageChange() {
 
 	log.Printf("[app/storage-watcher] autoSaveOnStorageChange called")
 
+	// Read storage.json once for both login check and credentials (avoids double read)
+	credentials, isLoggedIn, err := traedb.ReadAuthCredentialsWithLogin(traedb.DefaultTraeDataPath)
+	if err != nil {
+		return
+	}
+
 	// Check if Trae is logged in — if not, notify frontend that no user is active
-	if !traedb.IsTraeLoggedIn(traedb.DefaultTraeDataPath) {
+	if !isLoggedIn {
 		if a.lastSavedUser != "" {
 			a.lastSavedUser = ""
 			if a.ctx != nil {
@@ -664,11 +741,6 @@ func (a *App) autoSaveOnStorageChange() {
 		return
 	}
 
-	// Read current credentials from storage.json
-	credentials, err := traedb.ReadAuthCredentials(traedb.DefaultTraeDataPath)
-	if err != nil {
-		return
-	}
 	jsonData, err := json.Marshal(credentials)
 	if err != nil {
 		return
@@ -894,9 +966,15 @@ func (a *App) HasSnapshot(userID string) bool {
 // have credentials saved yet, it saves them. This handles the case where
 // a user logged in before the app was started.
 func (a *App) autoFreezeAllKnownUsers() {
-	currentUserID, err := traedb.GetCurrentTraeUserID(traedb.DefaultTraeDataPath)
-	if err != nil || currentUserID == "" {
-		return
+	// 优先使用 JWT token（避免扫描日志文件）
+	currentUserID, _ := traedb.GetJWTUserID()
+	if currentUserID == "" {
+		// JWT 不可用，fallback 到日志扫描
+		var err error
+		currentUserID, err = traedb.GetCurrentTraeUserID(traedb.DefaultTraeDataPath)
+		if err != nil || currentUserID == "" {
+			return
+		}
 	}
 
 	// Check if current user already has credentials

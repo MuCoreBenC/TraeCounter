@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.2.10
+
+### 优化
+
+- **大幅减少磁盘读取**：半小时读取量从 50MB 降到几百 KB 级别
+  - 删除死代码 `scanAllLogsForQuotaSignals`、`parseQuotaFromLogWithDebug`、`scanRendererLogForQuotaSignals`（结果被 `_ = ...` 丢弃，每次 `GetQuotaInfo` 浪费 2-14MB I/O）
+  - 删除死代码 `HasUserLoggedIn`、`syncUserProfile`（无调用点）
+  - `ParseAllUserProfilesFromLogs` 从遍历所有日志目录改为只读最新 2 个目录
+  - `checkRendererLogsForExhaustion` 从扫描最近 3 个日志目录改为只扫描最新 1 个
+  - `autoSaveOnStorageChange` 合并 `IsTraeLoggedIn` + `ReadAuthCredentials` 为一次读取（新增 `ReadAuthCredentialsWithLogin`）
+  - `quotaCache` TTL 从 3 分钟延长到 10 分钟
+  - `userProfilesCache` TTL 从 10 分钟延长到 30 分钟
+- **native 事件轮询改为事件驱动**：移除 2 秒定时轮询，改用 `dispatch_semaphore` 阻塞等待，空闲时零 CPU 开销
+- **移除磁盘 I/O 统计代码**：`trackFileRead` 在每次文件读取时执行原子操作，移除后减少 CPU 唤醒
+- **精细化缓存失效**：`storage.json` 变化时只失效 `sessionUserMap` 缓存，quota 和 userProfiles 走自身 TTL
+- **减小日志读取量**：`readFileTail` 的 maxBytes 从 2MB/5MB 降到 512KB/1MB
+- **跨天自动归零**：新增自适应间隔定时器，午夜 0 点自动刷新状态栏/TouchBar 显示（距离午夜远时 1 小时检查一次，接近时缩短到 10 秒）
+
 ## v0.2.8
 
 ### 修复
