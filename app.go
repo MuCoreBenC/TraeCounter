@@ -87,8 +87,8 @@ func (a *App) startup(ctx context.Context) {
 		}
 	})
 
-	// Start auto refresh (fsnotify watches file changes in real-time, 5min fallback polling)
-	a.counter.StartAutoRefresh(5 * time.Minute)
+	// Start auto refresh (event-driven via fsnotify, no polling)
+	a.counter.StartAutoRefresh()
 
 	// Watch storage.json for credential changes (e.g. user logs in/out in Trae)
 	go a.watchStorageJSON()
