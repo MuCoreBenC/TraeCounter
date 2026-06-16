@@ -27,6 +27,7 @@ type App struct {
 	counter       *counter.Counter
 	store         *store.Store
 	lastSavedUser string
+	lastSavedData string
 	switchTarget  string // Set by SwitchUser, tells autoSaveOnStorageChange to trust this user ID
 	saveMu        sync.Mutex
 }
@@ -652,9 +653,11 @@ func (a *App) autoSaveOnStorageChange() {
 
 	// Check if Trae is logged in — if not, notify frontend that no user is active
 	if !traedb.IsTraeLoggedIn(traedb.DefaultTraeDataPath) {
-		a.lastSavedUser = ""
-		if a.ctx != nil {
-			runtime.EventsEmit(a.ctx, "currentUserChanged", "")
+		if a.lastSavedUser != "" {
+			a.lastSavedUser = ""
+			if a.ctx != nil {
+				runtime.EventsEmit(a.ctx, "currentUserChanged", "")
+			}
 		}
 		return
 	}
@@ -669,6 +672,11 @@ func (a *App) autoSaveOnStorageChange() {
 		return
 	}
 	newData := string(jsonData)
+
+	// Quick dedup: if credential data hasn't changed and we already have a user, skip
+	if a.lastSavedUser != "" && a.lastSavedData == newData {
+		return
+	}
 
 	// Determine current user
 	currentUserID, _ := a.store.GetAppState("last_active_user")
@@ -713,6 +721,7 @@ func (a *App) autoSaveOnStorageChange() {
 		}
 
 		a.lastSavedUser = currentUserID
+	a.lastSavedData = newData
 
 		// Notify frontend of the current user change
 		if a.ctx != nil {
@@ -770,6 +779,7 @@ func (a *App) autoSaveOnStorageChange() {
 	}
 
 	a.lastSavedUser = currentUserID
+	a.lastSavedData = newData
 
 	// Always notify frontend of the current user (even if data unchanged)
 	// This is important after a switch when frontend has cleared currentTraeUserId
@@ -978,6 +988,7 @@ func (a *App) SwitchUser(userID string) error {
 		traedb.InvalidateSessionUserMapCache()
 		a.counter.SendSelectedUserCount(userID)
 		a.lastSavedUser = ""
+		a.lastSavedData = ""
 		if a.ctx != nil {
 			runtime.EventsEmit(a.ctx, "currentUserChanged", "")
 		}

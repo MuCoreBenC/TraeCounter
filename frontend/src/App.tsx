@@ -884,10 +884,8 @@ const App: React.FC = () => {
         } else {
           setDailyLearnedQuota(0);
         }
-        // Also refresh quota info
-        (window as any).go.main.App.GetQuotaInfo().then((info: any) => {
-          if (info) setQuotaInfo(info);
-        }).catch(() => {});
+        // Also refresh quota info (only on manual refresh, not on every countUpdated)
+        // Quota info is loaded separately on init and manual refresh to avoid frequent disk reads
       }
     } catch (e) {
       console.error('Failed to refresh data:', e);
