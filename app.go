@@ -651,6 +651,8 @@ func (a *App) autoSaveOnStorageChange() {
 	a.saveMu.Lock()
 	defer a.saveMu.Unlock()
 
+	log.Printf("[app/storage-watcher] autoSaveOnStorageChange called")
+
 	// Check if Trae is logged in — if not, notify frontend that no user is active
 	if !traedb.IsTraeLoggedIn(traedb.DefaultTraeDataPath) {
 		if a.lastSavedUser != "" {

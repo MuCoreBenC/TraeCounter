@@ -821,16 +821,7 @@ const App: React.FC = () => {
           setLastActiveUserId(lastActive || null);
         }
 
-        // Load snapshot status for all users
-        if ((window as any)?.go?.main?.App) {
-          const newStatus: Record<string, boolean> = {};
-          for (const uc of userCounts) {
-            try {
-              newStatus[uc.user_id] = await (window as any).go.main.App.HasSnapshot(uc.user_id);
-            } catch { newStatus[uc.user_id] = false; }
-          }
-          setSnapshotStatus(newStatus);
-        }
+        // Snapshot status is loaded on init and manual refresh only, not on every countUpdated
 
         if (week) setWeekHistory(week.map((d: any) => ({ date: d.date, label: d.date.substring(5), detailLabel: d.date, messages: d.count })));
         if (month) setMonthHistory(month.map((d: any) => ({ date: d.date, label: d.date.substring(8), detailLabel: d.date, messages: d.count })));
@@ -840,52 +831,9 @@ const App: React.FC = () => {
 
       // Learn quota from exhaustion events and auto-adjust thresholds
       if ((window as any)?.go?.main?.App) {
-        // Get current Trae user ID — use last_active_user from DB (not log detection)
-        // which is the source of truth after account switches.
-        // IMPORTANT: Don't overwrite currentTraeUserId during a switch —
-        // GetLastActiveUser() may return stale data, and the currentUserChanged
-        // event is the authoritative source during switches.
-        try {
-          if (!isUserSwitchingRef.current) {
-            const isLoggedIn = await (window as any).go.main.App.IsTraeLoggedIn();
-            if (isLoggedIn) {
-              const curId = await (window as any).go.main.App.GetLastActiveUser();
-              if (curId) {
-                setCurrentTraeUserId(curId);
-              }
-            } else {
-              setCurrentTraeUserId('');
-            }
-          }
-        } catch {}
-        await (window as any).go.main.App.RecordAndLearnQuota();
-        // Refresh thresholds if auto-threshold is enabled
-        const auto = await (window as any).go.main.App.GetAutoThreshold();
-        if (auto) {
-          const wt = await (window as any).go.main.App.GetWarningThreshold();
-          const at = await (window as any).go.main.App.GetAlertThreshold();
-          setWarningThreshold(wt);
-          setAlertThreshold(at);
-        }
-        // Update learned quota display for current user
-        const currentUid = targetUserId || activeId || lastActive || '';
-        const lq = await (window as any).go.main.App.GetLearnedQuota(currentUid);
-        setLearnedQuota(lq);
-        // When viewing historical data, also fetch that day's learned quota
-        if (dayOffset > 0 && currentUid) {
-          const targetDate = new Date();
-          targetDate.setDate(targetDate.getDate() - dayOffset);
-          const y = targetDate.getFullYear();
-          const m = String(targetDate.getMonth() + 1).padStart(2, '0');
-          const d = String(targetDate.getDate()).padStart(2, '0');
-          const dateStr = `${y}-${m}-${d}`;
-          const dlq = await (window as any).go.main.App.GetLearnedQuotaForDate(currentUid, dateStr);
-          setDailyLearnedQuota(dlq);
-        } else {
-          setDailyLearnedQuota(0);
-        }
-        // Also refresh quota info (only on manual refresh, not on every countUpdated)
-        // Quota info is loaded separately on init and manual refresh to avoid frequent disk reads
+        // Don't call IsTraeLoggedIn/RecordAndLearnQuota on every refreshData —
+        // they read disk files. Only call on init and manual refresh.
+        // These are handled in the init useEffect and handleRefresh instead.
       }
     } catch (e) {
       console.error('Failed to refresh data:', e);
@@ -1115,13 +1063,52 @@ const App: React.FC = () => {
     try {
       if (dayOffset > 0) setDayOffset(0);
       if ((window as any)?.go?.main?.App) {
-        await (window as any).go.main.App.Refresh();
-        (window as any).go.main.App.GetQuotaInfo().then((info: any) => {
+        const App = (window as any).go.main.App;
+        await App.Refresh();
+
+        // Heavy I/O operations — only on manual refresh
+        App.GetQuotaInfo().then((info: any) => {
           if (info) setQuotaInfo(info);
         }).catch(() => {});
+
+        // Record and learn quota (reads log files)
+        await App.RecordAndLearnQuota();
+
+        // Update learned quota display
+        const lq = await App.GetLearnedQuota(activeId || '');
+        setLearnedQuota(lq);
+
+        // Update thresholds
+        const auto = await App.GetAutoThreshold();
+        if (auto) {
+          const wt = await App.GetWarningThreshold();
+          const at = await App.GetAlertThreshold();
+          setWarningThreshold(wt);
+          setAlertThreshold(at);
+        }
+
+        // Update snapshot status for all users
+        const userCounts = await App.GetAllUserTodayCounts();
+        if (userCounts && userCounts.length > 0) {
+          const newStatus: Record<string, boolean> = {};
+          for (const uc of userCounts) {
+            try {
+              newStatus[uc.user_id] = await App.HasSnapshot(uc.user_id);
+            } catch { newStatus[uc.user_id] = false; }
+          }
+          setSnapshotStatus(newStatus);
+        }
+
+        // Check login status
+        const isLoggedIn = await App.IsTraeLoggedIn();
+        if (isLoggedIn) {
+          const curId = await App.GetLastActiveUser();
+          if (curId) setCurrentTraeUserId(curId);
+        } else {
+          setCurrentTraeUserId('');
+        }
       }
       // Use debounced refresh to avoid conflicting with countUpdated event
-      // which is also triggered by App.Refresh()
       refreshDataDebouncedRef.current();
     } catch (e) { /* ignore */ }
     setTimeout(() => setIsRefreshing(false), 800);
