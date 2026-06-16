@@ -87,8 +87,8 @@ func (a *App) startup(ctx context.Context) {
 		}
 	})
 
-	// Start auto refresh (fsnotify watches file changes in real-time, 30s fallback polling)
-	a.counter.StartAutoRefresh(30 * time.Second)
+	// Start auto refresh (fsnotify watches file changes in real-time, 5min fallback polling)
+	a.counter.StartAutoRefresh(5 * time.Minute)
 
 	// Watch storage.json for credential changes (e.g. user logs in/out in Trae)
 	go a.watchStorageJSON()
@@ -1422,19 +1422,8 @@ func (a *App) RecordAndLearnQuota() {
 
 	today := time.Now().Format("2006-01-02")
 
-	// #region debug-point quota-limit-detection
-	// Get today's conversation count for logging
-	todayCount, _ := a.store.GetLedgerCountByUserDate(lastActive, today)
-	learnedQuota, _ := a.store.GetLearnedQuota(lastActive)
-	traedb.QuotaDebugLog("[RecordAndLearnQuota] user=%s today=%s todayCount=%d learnedQuota=%d info.Quota=%d info.Used=%d info.IsExhausted=%v info.ExhaustSource=%s info.IdentityStr=%s",
-		lastActive, today, todayCount, learnedQuota, info.Quota, info.Used, info.IsExhausted, info.ExhaustSource, info.IdentityStr)
-	// #endregion debug-point quota-limit-detection
-
 	// Source 1: 4031 error log (highest confidence when available)
 	if info.Quota > 0 && info.ExhaustSource == "4031_log" {
-		// #region debug-point quota-limit-detection
-		traedb.QuotaDebugLog("[RecordAndLearnQuota] Source1 4031_log: quota=%d used=%d isExhausted=%v", info.Quota, info.Used, info.IsExhausted)
-		// #endregion debug-point quota-limit-detection
 		if info.IsExhausted {
 			a.store.RecordQuotaExhaustion(lastActive, today, info.Used, info.Quota)
 		} else {
@@ -1444,7 +1433,7 @@ func (a *App) RecordAndLearnQuota() {
 
 	// Source 2: Counter-based detection
 	// Get today's conversation count for this user
-	todayCount, err = a.store.GetLedgerCountByUserDate(lastActive, today)
+	todayCount, err := a.store.GetLedgerCountByUserDate(lastActive, today)
 	if err == nil && todayCount > 0 {
 		// Get the current known quota for this user
 		knownQuota := info.Quota
@@ -1462,21 +1451,6 @@ func (a *App) RecordAndLearnQuota() {
 				knownQuota = 500
 			}
 		}
-
-		// #region debug-point quota-limit-detection
-		traedb.QuotaDebugLog("[RecordAndLearnQuota] Source2 counter: todayCount=%d knownQuota=%d (source: info.Quota=%d, learned=%d, hardcoded=%s) willRecordExhaustion=%v",
-			todayCount, knownQuota, info.Quota, learnedQuota,
-			func() string {
-				if info.Quota > 0 {
-					return "info.Quota"
-				}
-				if learnedQuota > 0 {
-					return "learned"
-				}
-				return "hardcoded"
-			}(),
-			info.IsExhausted || todayCount >= knownQuota)
-		// #endregion debug-point quota-limit-detection
 
 		// Detect exhaustion: today's count >= known quota
 		// OR was already detected exhausted by log sources
@@ -1497,17 +1471,11 @@ func (a *App) RecordAndLearnQuota() {
 				source = "exhaustion_renderer_log"
 				observedQuota = 0
 				observedUsed = todayCount
-				traedb.QuotaDebugLog("[RecordAndLearnQuota] renderer_log: fast_request disabled detected but cannot infer quota, using observedQuota=0")
 			} else if todayCount >= knownQuota {
 				// Counter-based: count exceeded known quota
 				source = "counter_exhaustion"
 				observedQuota = knownQuota
 			}
-
-			// #region debug-point quota-limit-detection
-			traedb.QuotaDebugLog("[RecordAndLearnQuota] RECORDING exhaustion: user=%s date=%s observedUsed=%d observedQuota=%d source=%s",
-				lastActive, today, observedUsed, observedQuota, source)
-			// #endregion debug-point quota-limit-detection
 
 			a.store.RecordQuotaExhaustionWithSource(lastActive, today, observedUsed, observedQuota, source)
 		}
