@@ -275,6 +275,13 @@ func (a *App) Refresh() error {
 	return a.counter.Refresh()
 }
 
+// SyncCurrentUserProfile fetches the current logged-in user's profile from Trae API
+// and persists it. Called by frontend when opening account management or manual refresh.
+// Returns the user_id that was synced, or empty string if not logged in.
+func (a *App) SyncCurrentUserProfile() (string, error) {
+	return a.counter.SyncCurrentUserProfileFromAPI()
+}
+
 // GetWeekHistory returns the last 7 days of counts for a specific user.
 func (a *App) GetWeekHistory(userID string) ([]store.LedgerDateCount, error) {
 	return a.counter.GetWeekHistory(userID)

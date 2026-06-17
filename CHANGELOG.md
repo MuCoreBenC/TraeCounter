@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.12
+
+### 修复
+
+- **新用户头像不显示**：新注册用户在 Trae 日志中只有 `[updateLocalCredential]` 格式记录，该格式没有 `AvatarUrl` 字段，导致从头像解析为空字符串。新增 `FetchCurrentUserInfoFromAPI()` 函数，调用 Trae API `https://api.trae.cn/cloudide/api/v3/trae/GetUserInfo` 主动获取当前登录用户头像（使用 JWT token 认证），并持久化到 `user_profiles` 表
+- **空头像覆盖已有头像**：`UpsertUserProfile` 新增空值保护，当新值为空但已有值非空时保留已有值，防止日志同步（avatar 为空）覆盖 API 获取的头像
+
+### 优化
+
+- **多触发点同步头像**：在应用启动、点击刷新按钮、打开账号管理时都会触发当前登录用户头像同步
+- **聚焦当前用户**：只同步当前登录用户的头像，不处理历史找不到的用户
+
 ## v0.2.11
 
 ### 修复

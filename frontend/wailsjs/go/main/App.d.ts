@@ -129,4 +129,6 @@ export function SnapshotForUser(arg1:string):Promise<void>;
 
 export function SwitchUser(arg1:string):Promise<void>;
 
+export function SyncCurrentUserProfile():Promise<string>;
+
 export function ToggleUserTracking(arg1:string):Promise<void>;

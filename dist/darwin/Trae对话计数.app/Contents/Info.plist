@@ -12,11 +12,11 @@
         <key>CFBundleIdentifier</key>
         <string>com.wails.trae-counter</string>
         <key>CFBundleVersion</key>
-        <string>0.2.11</string>
+        <string>0.2.12</string>
         <key>CFBundleGetInfoString</key>
         <string>CC BY-NC 4.0</string>
         <key>CFBundleShortVersionString</key>
-        <string>0.2.11</string>
+        <string>0.2.12</string>
         <key>CFBundleIconFile</key>
         <string>iconfile</string>
         <key>LSMinimumSystemVersion</key>

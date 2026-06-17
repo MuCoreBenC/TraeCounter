@@ -250,6 +250,10 @@ export function SwitchUser(arg1) {
   return window['go']['main']['App']['SwitchUser'](arg1);
 }
 
+export function SyncCurrentUserProfile() {
+  return window['go']['main']['App']['SyncCurrentUserProfile']();
+}
+
 export function ToggleUserTracking(arg1) {
   return window['go']['main']['App']['ToggleUserTracking'](arg1);
 }

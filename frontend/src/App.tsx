@@ -1066,6 +1066,11 @@ const App: React.FC = () => {
         const App = (window as any).go.main.App;
         await App.Refresh();
 
+        // Sync current user's avatar from Trae API (reliable for new users)
+        if (App.SyncCurrentUserProfile) {
+          try { await App.SyncCurrentUserProfile(); } catch {}
+        }
+
         // Heavy I/O operations — only on manual refresh
         App.GetQuotaInfo().then((info: any) => {
           if (info) setQuotaInfo(info);
@@ -1333,7 +1338,16 @@ const App: React.FC = () => {
                           </button>
                         )}
                         <button
-                          onClick={() => { setView('all_accounts'); setShowUserDropdown(false); }}
+                          onClick={() => {
+                            setView('all_accounts');
+                            setShowUserDropdown(false);
+                            // Sync current user's avatar from Trae API when opening account management
+                            if ((window as any)?.go?.main?.App?.SyncCurrentUserProfile) {
+                              (window as any).go.main.App.SyncCurrentUserProfile().then(() => {
+                                refreshDataDebouncedRef.current();
+                              }).catch(() => {});
+                            }
+                          }}
                           className="text-[10px] text-blue-500 dark:text-[#4daafc] font-bold hover:bg-blue-50 dark:hover:bg-[#6e9eff]/10 rounded px-1 -mx-1 flex items-center gap-0.5 transition-colors"
                           title="进入账号管理后，点击头像旁的编辑图标可为账号添加备注"
                         >
