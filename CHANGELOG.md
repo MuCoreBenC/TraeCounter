@@ -1,11 +1,25 @@
 # Changelog
 
+## v0.2.11
+
+### 修复
+
+- **About 面板版本号显示 (null)**：cgo 桥接层 `tcSetupAppMenu` 存在 use-after-free——Go 端 `defer C.free()` 在函数返回时立即释放 C 字符串，但 C 端 `dispatch_async` 异步执行时指针已悬空。修复：在 `dispatch_async` 之前将 version 复制为 `NSString`，block 内使用副本
+- **Finder"显示简介"版本号显示 1.0.0**：`wails.json` 缺少 `info` 字段，导致 Info.plist 模板变量 `{{.Info.ProductVersion}}` 为空，macOS 回退到默认 1.0.0。修复：添加 `info.productVersion` 字段，`build.sh` 在构建前动态更新版本号
+- **"显示简介"版权信息为空**：`wails.json` 缺少 `info.copyright` 字段。修复：添加 `info.copyright` 和 `info.comments` 字段
+
 ## v0.2.10
 
 ### 优化
 
-- **大幅减少磁盘读取**：半小时读取量从 50MB 降到几百 KB 级别
-  - 删除死代码 `scanAllLogsForQuotaSignals`、`parseQuotaFromLogWithDebug`、`scanRendererLogForQuotaSignals`（结果被 `_ = ...` 丢弃，每次 `GetQuotaInfo` 浪费 2-14MB I/O）
+- **大幅减少磁盘读取**：运行时每分钟磁盘读取从 32MB 降到接近 0
+  - 修复根因 1：`storage.json` 变化时不再失效 `GetSessionUserMap` 缓存（session-user 映射来自 state.vscdb，与 storage.json 无关），避免每次重建读取 17 个 SQLite DB（8MB）
+  - 修复根因 2：`watchFileSystem` 不再监听 `globalStorage` 目录——该目录因 `state.vscdb` / `state.vscdb-journal` 频繁写入产生约 24 次/分钟的 fsnotify 事件，每个事件都错误触发 `RefreshSession("ai-agent")`（路径提取 bug 导致 globalStorage 路径被映射为 session "ai-agent"）。移除该 watcher 后 fsnotify 事件从 24 次/分钟降为 0
+  - 修复 `extractSessionDir`：新增 `..` 前缀检查，确保只有 snapshot 目录下的事件才会触发刷新
+  - `findDatabases` 只读最近 7 天修改过的 DB 文件，跳过旧 workspaceStorage DB
+  - `autoSaveOnStorageChange` 去抖从 5 秒延长到 30 秒，减少 storage.json 读取频率
+  - `RefreshSession` 去抖从 500ms 延长到 2 秒，减少 fsnotify 事件触发的目录读取
+  - 删除死代码 `scanAllLogsForQuotaSignals`、`parseQuotaFromLogWithDebug`、`scanRendererLogForQuotaSignals`（结果被丢弃，每次 `GetQuotaInfo` 浪费 2-14MB I/O）
   - 删除死代码 `HasUserLoggedIn`、`syncUserProfile`（无调用点）
   - `ParseAllUserProfilesFromLogs` 从遍历所有日志目录改为只读最新 2 个目录
   - `checkRendererLogsForExhaustion` 从扫描最近 3 个日志目录改为只扫描最新 1 个

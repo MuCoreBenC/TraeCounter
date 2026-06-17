@@ -700,11 +700,11 @@ func (a *App) watchStorageJSON() {
 		case event := <-watcher.Events:
 			if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
 				if strings.Contains(event.Name, "storage.json") {
-					if !debouncePending {
-						debouncePending = true
-						debounce.Reset(5 * time.Second)
-					}
+				if !debouncePending {
+					debouncePending = true
+					debounce.Reset(30 * time.Second)
 				}
+			}
 			}
 		case <-debounce.C:
 			debouncePending = false

@@ -12,11 +12,11 @@
         <key>CFBundleIdentifier</key>
         <string>com.wails.trae-counter</string>
         <key>CFBundleVersion</key>
-        <string>1.0.0</string>
+        <string>0.2.11</string>
         <key>CFBundleGetInfoString</key>
-        <string>Built using Wails (https://wails.io)</string>
+        <string>CC BY-NC 4.0</string>
         <key>CFBundleShortVersionString</key>
-        <string>1.0.0</string>
+        <string>0.2.11</string>
         <key>CFBundleIconFile</key>
         <string>iconfile</string>
         <key>LSMinimumSystemVersion</key>
@@ -24,7 +24,7 @@
         <key>NSHighResolutionCapable</key>
         <string>true</string>
         <key>NSHumanReadableCopyright</key>
-        <string>Copyright.........</string>
+        <string>© 2026 Trae 对话计数 Contributors</string>
         
         
     </dict>

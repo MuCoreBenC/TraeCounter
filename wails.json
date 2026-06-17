@@ -6,6 +6,12 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "info": {
+    "productName": "Trae 对话计数",
+    "productVersion": "0.2.11",
+    "copyright": "© 2026 Trae 对话计数 Contributors",
+    "comments": "CC BY-NC 4.0"
+  },
   "author": {
     "name": "",
     "email": ""
