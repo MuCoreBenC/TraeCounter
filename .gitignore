@@ -23,3 +23,7 @@ internal/counter/
 internal/store/
 internal/traedb/
 internal/native/
+
+# Debug
+debug-*.md
+image*.png

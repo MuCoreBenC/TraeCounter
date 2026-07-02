@@ -287,6 +287,11 @@ func (a *App) GetWeekHistory(userID string) ([]store.LedgerDateCount, error) {
 	return a.counter.GetWeekHistory(userID)
 }
 
+// GetThisWeekHistory returns this week's (Monday to Sunday) counts for a specific user.
+func (a *App) GetThisWeekHistory(userID string) ([]store.LedgerDateCount, error) {
+	return a.counter.GetThisWeekHistory(userID)
+}
+
 // GetMonthHistory returns the last 30 days of counts for a specific user.
 func (a *App) GetMonthHistory(userID string) ([]store.LedgerDateCount, error) {
 	return a.counter.GetMonthHistory(userID)
@@ -434,8 +439,25 @@ func (a *App) SetControlStripPinned(pinned bool) error {
 }
 
 // GetQuotaInfo returns the current quota information from Trae logs.
+// When today's count approaches the known quota (>=80%), triggers deep scan
+// to search further back in the ai-agent log for 4031 errors.
 func (a *App) GetQuotaInfo() (*traedb.QuotaInfo, error) {
-	info, err := traedb.GetQuotaInfo(traedb.DefaultTraeDataPath)
+	deepScan := false
+	if a.counter != nil && a.store != nil {
+		_, _, total, err := a.counter.GetTodayCount()
+		if err == nil {
+			knownQuota := 43 // Free default
+			if lastActive, err := a.counter.GetLastActiveUser(); err == nil && lastActive != "" {
+				if learned, err := a.store.GetLearnedQuota(lastActive); err == nil && learned > 0 {
+					knownQuota = learned
+				}
+			}
+			if total >= knownQuota*8/10 {
+				deepScan = true
+			}
+		}
+	}
+	info, err := traedb.GetQuotaInfo(traedb.DefaultTraeDataPath, deepScan)
 	if err != nil {
 		return nil, err
 	}
@@ -1447,18 +1469,18 @@ func (a *App) SetAutoThreshold(enabled bool) error {
 	return a.store.SetAppState("auto_threshold", val)
 }
 
-// GetManualQuota returns the manually set quota limit (default 58).
+// GetManualQuota returns the manually set quota limit (default 43).
 func (a *App) GetManualQuota() int {
 	if a.store == nil {
-		return 58
+		return 43
 	}
 	val, err := a.store.GetAppState("manual_quota")
 	if err != nil || val == "" {
-		return 58
+		return 43
 	}
 	n, err := strconv.Atoi(val)
 	if err != nil {
-		return 58
+		return 43
 	}
 	return n
 }
@@ -1497,6 +1519,30 @@ func (a *App) SetShowAllAccounts(enabled bool) error {
 	return a.store.SetAppState("show_all_accounts", "false")
 }
 
+// GetCalibrateOnExhaust returns whether to calibrate count to server value when exhausted.
+func (a *App) GetCalibrateOnExhaust() bool {
+	if a.store == nil {
+		return false
+	}
+	val, err := a.store.GetAppState("calibrate_on_exhaust")
+	if err != nil {
+		return false
+	}
+	return val == "1"
+}
+
+// SetCalibrateOnExhaust sets whether to calibrate count to server value when exhausted.
+func (a *App) SetCalibrateOnExhaust(enabled bool) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	val := "0"
+	if enabled {
+		val = "1"
+	}
+	return a.store.SetAppState("calibrate_on_exhaust", val)
+}
+
 // RecordAndLearnQuota checks current quota info and records exhaustion events.
 // Called during data refresh to learn from quota limits.
 // RecordAndLearnQuota checks quota status and records learning data.
@@ -1508,7 +1554,7 @@ func (a *App) RecordAndLearnQuota() {
 		return
 	}
 
-	info, err := traedb.GetQuotaInfo(traedb.DefaultTraeDataPath)
+	info, err := traedb.GetQuotaInfo(traedb.DefaultTraeDataPath, true) // always deep scan during learning
 	if err != nil || info == nil {
 		return
 	}
@@ -1544,7 +1590,7 @@ func (a *App) RecordAndLearnQuota() {
 		if knownQuota == 0 {
 			// Hardcoded fallback based on identity
 			if info.IdentityStr == "Free" {
-				knownQuota = 58
+				knownQuota = 43
 			} else {
 				knownQuota = 500
 			}

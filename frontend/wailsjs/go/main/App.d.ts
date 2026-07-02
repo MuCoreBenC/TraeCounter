@@ -23,6 +23,8 @@ export function GetAutoLaunch():Promise<boolean>;
 
 export function GetAutoThreshold():Promise<boolean>;
 
+export function GetCalibrateOnExhaust():Promise<boolean>;
+
 export function GetControlStripPinned():Promise<boolean>;
 
 export function GetCurrentTraeUserID():Promise<string>;
@@ -54,6 +56,8 @@ export function GetSelectedUser():Promise<string>;
 export function GetShowAllAccounts():Promise<boolean>;
 
 export function GetTheme():Promise<string>;
+
+export function GetThisWeekHistory(arg1:string):Promise<Array<store.LedgerDateCount>>;
 
 export function GetTodayCount():Promise<main.TodayCountResult>;
 
@@ -106,6 +110,8 @@ export function SetAlertThreshold(arg1:number):Promise<void>;
 export function SetAutoLaunch(arg1:boolean):Promise<void>;
 
 export function SetAutoThreshold(arg1:boolean):Promise<void>;
+
+export function SetCalibrateOnExhaust(arg1:boolean):Promise<void>;
 
 export function SetControlStripPinned(arg1:boolean):Promise<void>;
 

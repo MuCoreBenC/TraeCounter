@@ -125,6 +125,12 @@ export namespace traedb {
 	    next_flash: number;
 	    user_type: number;
 	    dimension: string;
+	    daily_quota: number;
+	    daily_used: number;
+	    daily_next_flash: number;
+	    weekly_quota: number;
+	    weekly_used: number;
+	    weekly_next_flash: number;
 	    is_exhausted: boolean;
 	    identity_str: string;
 	    fast_request_per: number;
@@ -141,6 +147,12 @@ export namespace traedb {
 	        this.next_flash = source["next_flash"];
 	        this.user_type = source["user_type"];
 	        this.dimension = source["dimension"];
+	        this.daily_quota = source["daily_quota"];
+	        this.daily_used = source["daily_used"];
+	        this.daily_next_flash = source["daily_next_flash"];
+	        this.weekly_quota = source["weekly_quota"];
+	        this.weekly_used = source["weekly_used"];
+	        this.weekly_next_flash = source["weekly_next_flash"];
 	        this.is_exhausted = source["is_exhausted"];
 	        this.identity_str = source["identity_str"];
 	        this.fast_request_per = source["fast_request_per"];

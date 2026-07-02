@@ -26,6 +26,7 @@ interface UserAccount {
 interface ChartPoint {
   label: string;
   detailLabel?: string;
+  weekdayLabel?: string;
   messages: number;
   date?: string;
   month?: string;
@@ -175,7 +176,8 @@ const UserAvatar: React.FC<{
 const FluidChart: React.FC<{
   data: ChartPoint[];
   isDark?: boolean;
-}> = ({ data, isDark = false }) => {
+  onLabelClick?: () => void;
+}> = ({ data, isDark = false, onLabelClick }) => {
   const RESOLUTION = 120;
   const W = 780;
   const H = 180;
@@ -459,8 +461,10 @@ const FluidChart: React.FC<{
 
       {/* X 轴标签 */}
       <div
-        className="h-6 mt-1 relative text-[11px] text-slate-400 dark:text-gray-500 font-medium"
+        className={`h-6 mt-1 relative text-[11px] text-slate-400 dark:text-gray-500 font-medium ${onLabelClick ? 'cursor-pointer hover:text-slate-600 dark:hover:text-gray-300' : ''}`}
         style={{ marginLeft: `${(PAD_LEFT / W) * 100}%`, marginRight: `${(PAD_RIGHT / W) * 100}%` }}
+        onClick={onLabelClick}
+        title={onLabelClick ? '点击切换日期/周几显示' : undefined}
       >
         {data.map((d, i) => {
           const len = data.length;
@@ -529,7 +533,7 @@ const GlassCircleButton: React.FC<{
 
 const TIME_TABS = [
   { key: 'day', label: '今日' },
-  { key: 'week', label: '近7天' },
+  { key: 'week', label: '本周' },
   { key: 'month', label: '近30天' },
 ];
 
@@ -619,6 +623,55 @@ const sortAccounts = (accounts: UserAccount[], sortBy: string, lastActiveUserId:
 
 // ─── App ─────────────────────────────────────────────────────────────
 
+// SettingsInfo: 设置项的 tooltip 图标，悬停显示说明
+const SettingsInfo: React.FC<{ text: string }> = ({ text }) => (
+  <div className="relative group/info">
+    <Info size={11} className="text-slate-400 hover:text-slate-600 dark:text-gray-500 dark:hover:text-gray-300 cursor-help" />
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-800 dark:bg-slate-700 text-white text-[10px] rounded opacity-0 group-hover/info:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+      {text}
+    </div>
+  </div>
+);
+
+// RepeatButton: 单击触发一次，长按 400ms 后以 80ms 间隔重复触发
+const RepeatButton: React.FC<{
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+  children: React.ReactNode;
+}> = ({ onClick, disabled = false, className = '', children }) => {
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stop = useCallback(() => {
+    if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+    if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (disabled) return;
+    onClick();
+    timeoutRef.current = setTimeout(() => {
+      intervalRef.current = setInterval(onClick, 80);
+    }, 400);
+  }, [onClick, disabled]);
+
+  useEffect(() => () => stop(), [stop]);
+
+  return (
+    <button
+      onMouseDown={handleMouseDown}
+      onMouseUp={stop}
+      onMouseLeave={stop}
+      disabled={disabled}
+      className={className}
+    >
+      {children}
+    </button>
+  );
+};
+
 const App: React.FC = () => {
   const [accounts, setAccounts] = useState<UserAccount[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -628,6 +681,8 @@ const App: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [manualModal, setManualModal] = useState<{ show: boolean; delta: number }>({ show: false, delta: 0 });
   const [weekHistory, setWeekHistory] = useState<ChartPoint[]>([]);
+  const [thisWeekHistory, setThisWeekHistory] = useState<ChartPoint[]>([]);
+  const [useWeekdayLabel, setUseWeekdayLabel] = useState(false);
   const [monthHistory, setMonthHistory] = useState<ChartPoint[]>([]);
   const [yearHistory, setYearHistory] = useState<ChartPoint[]>([]);
   const [hourlyData, setHourlyData] = useState<ChartPoint[]>([]);
@@ -658,7 +713,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [controlStripPinned, setControlStripPinned] = useState(false);
   const [theme, setTheme] = useState<string>('system');
-  const [quotaInfo, setQuotaInfo] = useState<{ quota: number; used: number; next_flash: number; is_exhausted: boolean; identity_str: string; fast_request_per: number; exhaust_source: string } | null>(null);
+  const [quotaInfo, setQuotaInfo] = useState<{ quota: number; used: number; next_flash: number; is_exhausted: boolean; identity_str: string; fast_request_per: number; exhaust_source: string; daily_quota: number; daily_used: number; weekly_quota: number; weekly_used: number; dimension: string } | null>(null);
   const [warningThreshold, setWarningThreshold] = useState(40);
   const [alertThreshold, setAlertThreshold] = useState(50);
   const [dockHidden, setDockHidden] = useState(true);
@@ -667,9 +722,10 @@ const App: React.FC = () => {
   const [autoThreshold, setAutoThreshold] = useState(false);
   const [learnedQuota, setLearnedQuota] = useState(0);
   const [dailyLearnedQuota, setDailyLearnedQuota] = useState(0); // 查看历史日期时当天的学习上限
-  const [manualQuota, setManualQuota] = useState(58);
+  const [manualQuota, setManualQuota] = useState(43);
   const [dayOffset, setDayOffset] = useState(0); // 0=今天, 1=昨天, 2=前天...
   const [showAllAccounts, setShowAllAccounts] = useState(false); // 是否显示当天无数据的账号
+  const [calibrateOnExhaust, setCalibrateOnExhaust] = useState(false); // 到达上限后校准计数并锁定
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const settingsRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -789,6 +845,17 @@ const App: React.FC = () => {
           App.GetMonthHistory(uid),
           App.GetYearHistory(uid),
         ]);
+        // 本周数据独立获取，避免影响其他数据加载
+        try {
+          const thisWeek = await App.GetThisWeekHistory(uid);
+          if (thisWeek) setThisWeekHistory(thisWeek.map((d: any) => {
+            const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+            const wd = weekdays[new Date(d.date).getDay()] || d.date.substring(5);
+            return { date: d.date, label: d.date.substring(5), detailLabel: d.date, weekdayLabel: wd, messages: d.count };
+          }));
+        } catch {
+          // GetThisWeekHistory may not exist in older backends — ignore
+        }
 
         // Load hourly data for the selected day offset
         if (dayOffset > 0) {
@@ -975,6 +1042,9 @@ const App: React.FC = () => {
       (window as any).go.main.App.GetShowAllAccounts().then((v: boolean) => {
         setShowAllAccounts(v);
       }).catch(() => {});
+      (window as any).go.main.App.GetCalibrateOnExhaust().then((v: boolean) => {
+        setCalibrateOnExhaust(v);
+      }).catch(() => {});
     }
     // Listen for system theme changes when in "system" mode
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1039,13 +1109,19 @@ const App: React.FC = () => {
     return systemIsDark;
   }, [theme, systemIsDark]);
 
+  // 本周视图：根据 useWeekdayLabel 切换 label 显示日期或周几
+  const displayWeekHistory = useMemo<ChartPoint[]>(() => {
+    if (!useWeekdayLabel) return thisWeekHistory;
+    return thisWeekHistory.map(d => ({ ...d, label: d.weekdayLabel || d.label }));
+  }, [thisWeekHistory, useWeekdayLabel]);
+
   const chartData = useMemo<ChartPoint[]>(() => {
     if (timeView === 'day' && hourlyData.length > 0) return hourlyData;
-    if (timeView === 'week' && weekHistory.length > 0) return weekHistory;
+    if (timeView === 'week' && displayWeekHistory.length > 0) return displayWeekHistory;
     if (timeView === 'month' && monthHistory.length > 0) return monthHistory;
     if (timeView === 'year' && yearHistory.length > 0) return yearHistory;
     return [];
-  }, [timeView, hourlyData, weekHistory, monthHistory, yearHistory]);
+  }, [timeView, hourlyData, displayWeekHistory, weekHistory, monthHistory, yearHistory]);
 
   const mainViewAccounts = useMemo(() => {
     const filtered = showAllAccounts
@@ -1251,32 +1327,64 @@ const App: React.FC = () => {
                     </div>
                   );
                 }
+                const isWeekView = timeView === 'week';
                 const effectiveQuota = autoThreshold
                   ? (dayOffset > 0 && dailyLearnedQuota > 0 ? dailyLearnedQuota : learnedQuota)
                   : manualQuota;
                 // When viewing historical data, sum hourly data for total
                 const historicalTotal = dayOffset > 0 ? hourlyData.reduce((sum, h) => sum + h.messages, 0) : 0;
-                const count = dayOffset > 0 ? historicalTotal : (activeAccount?.total || 0);
+                // 本周总数
+                const weekTotal = thisWeekHistory.reduce((sum, h) => sum + h.messages, 0);
+                const count = isWeekView
+                  ? weekTotal
+                  : (dayOffset > 0 ? historicalTotal : (activeAccount?.total || 0));
+                // 额度校准：到达上限后锁定在服务端精确值
+                const isCalibrated = calibrateOnExhaust && !isWeekView && dayOffset === 0 &&
+                  quotaInfo?.is_exhausted && quotaInfo?.next_flash > 0 &&
+                  Date.now() < quotaInfo.next_flash;
+                const displayCount = isCalibrated ? (quotaInfo?.used || count) : count;
                 // Only use effectiveQuota for color — quotaInfo.is_exhausted is global (current Trae user)
                 // and may not match the account being viewed
-                const overQuota = effectiveQuota > 0 && count > effectiveQuota;
-                const atAlert = !overQuota && effectiveQuota > 0 && count >= effectiveQuota - 5;
+                // 本周视图不显示额度颜色（额度是按天计算的）
+                const overQuota = !isWeekView && effectiveQuota > 0 && count > effectiveQuota;
+                const atAlert = !isWeekView && !overQuota && effectiveQuota > 0 && count >= effectiveQuota - 5;
                 const numColor = overQuota
                   ? 'text-red-500 dark:text-red-400'
                   : atAlert
                   ? 'text-amber-500 dark:text-amber-400'
                   : 'text-slate-800 dark:text-[#ffffff]';
                 return (
-                  <div className={`font-black tracking-tight ${numColor} leading-none transition-colors duration-300`} style={{ fontSize: 'clamp(56px, max(15vw, 15vh), 140px)' }}>
-                    {count}
+                  <div
+                    className={`relative font-black tracking-tight ${numColor} leading-none transition-colors duration-300 cursor-pointer hover:scale-105 active:scale-95`}
+                    style={{ fontSize: 'clamp(56px, max(15vw, 15vh), 140px)', transition: 'color 0.3s, transform 0.15s' }}
+                    onClick={() => {
+                      if (isWeekView) {
+                        setTimeView('day');
+                      } else {
+                        setTimeView('week');
+                        setDayOffset(0);
+                      }
+                    }}
+                    title={isWeekView ? '点击查看今日数量' : isCalibrated ? '已校准：服务端精确值' : '点击查看本周数量'}
+                  >
+                    {displayCount}
+                    {isCalibrated && (
+                      <span className="absolute -top-1 -right-3 text-[9px] font-medium text-blue-500 dark:text-[#4daafc] bg-blue-50 dark:bg-blue-900/20 px-1 py-0.5 rounded-full whitespace-nowrap">
+                        已校准
+                      </span>
+                    )}
                   </div>
                 );
               })()}
               <div className="flex items-center justify-center gap-1.5 mt-1 h-4">
                 <span className="text-[clamp(11px,2.5vw,14px)] text-slate-400 dark:text-[#8e8e93] font-medium whitespace-nowrap">
-                  {dayOffset === 0 ? '今日总消息' : dayOffset === 1 ? '昨日总消息' : `${dayOffset}天前总消息`}
+                  {timeView === 'week'
+                    ? '本周总消息'
+                    : (dayOffset === 0 ? '今日总消息' : dayOffset === 1 ? '昨日总消息' : `${dayOffset}天前总消息`)}
                 </span>
                 {(() => {
+                  // 本周视图不显示每日额度
+                  if (timeView === 'week') return null;
                   // 查看历史日期时用当天学习上限，否则用全局学习上限/手动上限
                   const eq = autoThreshold
                     ? (dayOffset > 0 && dailyLearnedQuota > 0 ? dailyLearnedQuota : learnedQuota)
@@ -1288,6 +1396,8 @@ const App: React.FC = () => {
                   ) : null;
                 })()}
                 {(() => {
+                  // 本周视图不显示额度警告
+                  if (timeView === 'week') return null;
                   const eq = autoThreshold
                     ? (dayOffset > 0 && dailyLearnedQuota > 0 ? dailyLearnedQuota : learnedQuota)
                     : manualQuota;
@@ -1318,7 +1428,7 @@ const App: React.FC = () => {
                 >
                   <UserAvatar userId={activeAccount?.user_id || ''} avatarUrl={activeAccount?.avatar_url} active={true} size="sm" />
                   <span className="text-[clamp(11px,2.5vw,14px)] font-bold text-slate-700 dark:text-white group-hover:text-blue-600 dark:group-hover:text-[#4daafc] transition-colors truncate min-w-0 flex-1">
-                    {activeAccount?.name || '未知用户'}
+                    {activeAccount?.remark || activeAccount?.name || '未知用户'}
                   </span>
                   <ChevronDown size={12} className={`text-slate-400 dark:text-gray-500 transition-transform duration-200 shrink-0 ${showUserDropdown ? 'rotate-180 text-blue-500 dark:text-[#4daafc]' : ''}`} />
                 </button>
@@ -1364,7 +1474,7 @@ const App: React.FC = () => {
                         >
                           <div className="flex items-center gap-2 overflow-hidden">
                             <UserAvatar userId={acc.user_id} avatarUrl={acc.avatar_url} active={activeId === acc.user_id} size="sm" />
-                            <span className={`text-[11px] font-bold truncate ${activeId === acc.user_id ? 'text-blue-600 dark:text-[#4daafc]' : 'text-slate-600 dark:text-gray-500'}`}>{acc.name}</span>
+                            <span className={`text-[11px] font-bold truncate ${activeId === acc.user_id ? 'text-blue-600 dark:text-[#4daafc]' : 'text-slate-600 dark:text-gray-500'}`}>{acc.remark || acc.name}</span>
                           </div>
                           <span className="text-[10px] font-bold text-slate-400 dark:text-gray-500 ml-2 pr-2">{acc.total}</span>
                         </div>
@@ -1444,7 +1554,7 @@ const App: React.FC = () => {
               {chartData.length === 0 ? (
                 <div className="h-full flex items-center justify-center text-sm text-slate-400 dark:text-gray-500">暂无数据</div>
               ) : (
-                <FluidChart data={chartData} isDark={isDark} />
+                <FluidChart data={chartData} isDark={isDark} onLabelClick={timeView === 'week' ? () => setUseWeekdayLabel(v => !v) : undefined} />
               )}
 
               {/* Day navigation buttons — only show in 'day' view */}
@@ -1970,6 +2080,7 @@ const App: React.FC = () => {
                     setActiveId(switchConfirmId);
                     setIsUserSwitching(true);
                     setWeekHistory([]);
+                    setThisWeekHistory([]);
                     setMonthHistory([]);
                     setYearHistory([]);
                     setHourlyData([]);
@@ -2034,9 +2145,9 @@ const App: React.FC = () => {
         >
           {/* 仅状态栏显示 */}
           <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">仅状态栏显示</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">隐藏 Dock 图标，仅保留菜单栏</span>
+              <SettingsInfo text="隐藏 Dock 图标，仅保留菜单栏" />
             </div>
             <button
               onClick={async () => {
@@ -2054,9 +2165,9 @@ const App: React.FC = () => {
 
           {/* 开机自启动 */}
           <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">开机自启动</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">登录时自动在后台启动</span>
+              <SettingsInfo text="登录时自动在后台启动" />
             </div>
             <button
               onClick={async () => {
@@ -2074,9 +2185,9 @@ const App: React.FC = () => {
 
           {/* 阈值通知 */}
           <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">阈值通知</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">达到提醒/警告阈值时发送通知</span>
+              <SettingsInfo text="达到提醒/警告阈值时发送通知" />
             </div>
             <button
               onClick={async () => {
@@ -2093,9 +2204,9 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">固定到 Control Strip</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">在 Touch Bar 右侧固定显示图标</span>
+              <SettingsInfo text="在 Touch Bar 右侧固定显示图标" />
             </div>
             <button
                 onClick={toggleControlStrip}
@@ -2105,9 +2216,9 @@ const App: React.FC = () => {
               </button>
           </div>
           <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">外观主题</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">跟随系统或手动切换</span>
+              <SettingsInfo text="跟随系统或手动切换" />
             </div>
             <div className="flex items-center bg-gray-100 dark:bg-[#3a3a3c] rounded-lg p-0.5">
               {[
@@ -2132,9 +2243,9 @@ const App: React.FC = () => {
 
           {/* Show All Accounts */}
           <div className="flex items-center justify-between py-1 px-0.5 border-t border-slate-100 dark:border-[#3a3a3c] mt-1 pt-1.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">显示全部账号</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">在下拉菜单中显示当天无数据的账号</span>
+              <SettingsInfo text="在下拉菜单中显示当天无数据的账号" />
             </div>
             <button
               onClick={async () => {
@@ -2152,15 +2263,11 @@ const App: React.FC = () => {
 
           {/* Smart Threshold */}
           <div className="flex items-center justify-between py-1 px-0.5 border-t border-slate-100 dark:border-[#3a3a3c] mt-1 pt-1.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">智能阈值</span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">
-                {autoThreshold
-                  ? learnedQuota > 0
-                    ? `根据学习上限 ${learnedQuota} 自动调整`
-                    : '等待学习额度上限...'
-                  : '根据学习到的额度上限自动调整阈值'}
-              </span>
+              <SettingsInfo text={autoThreshold
+                ? (learnedQuota > 0 ? `根据学习上限 ${learnedQuota} 自动调整` : '等待学习额度上限...')
+                : '根据学习到的额度上限自动调整阈值'} />
             </div>
             <button
               onClick={async () => {
@@ -2183,116 +2290,143 @@ const App: React.FC = () => {
             </button>
           </div>
 
-          {/* Manual Quota Input (shown when smart threshold is off) */}
-          {!autoThreshold && (
-            <div className="flex items-center justify-between py-1 px-0.5">
-              <div className="flex flex-col">
-                <span className="text-[12px] font-medium text-slate-700 dark:text-white">额度上限</span>
-                <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">用于大数字变色和折线图红线</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => {
-                    const v = Math.max(1, manualQuota - 5);
-                    setManualQuota(v);
-                    if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetManualQuota(v);
-                  }}
-                  className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors"
-                >
-                  <Minus size={10} />
-                </button>
-                <span className="w-7 text-center text-[12px] font-bold text-blue-600 dark:text-[#4daafc]">{manualQuota}</span>
-                <button
-                  onClick={() => {
-                    const v = manualQuota + 5;
-                    setManualQuota(v);
-                    if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetManualQuota(v);
-                  }}
-                  className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors"
-                >
-                  <Plus size={10} />
-                </button>
-              </div>
+          {/* 额度校准：到达上限后用服务端精确值校准并锁定 */}
+          <div className="flex items-center justify-between py-1 px-0.5">
+            <div className="flex items-center gap-1">
+              <span className="text-[12px] font-medium text-slate-700 dark:text-white">额度校准</span>
+              <SettingsInfo text="到达上限后，用服务端的精确数值校准计数，并停止增加" />
             </div>
-          )}
+            <button
+              onClick={async () => {
+                const newVal = !calibrateOnExhaust;
+                if ((window as any)?.go?.main?.App) {
+                  await (window as any).go.main.App.SetCalibrateOnExhaust(newVal);
+                  setCalibrateOnExhaust(newVal);
+                }
+              }}
+              className={`relative w-[36px] h-[20px] rounded-full transition-colors duration-200 shrink-0 ${calibrateOnExhaust ? 'bg-blue-500' : 'bg-slate-300 dark:bg-[#4a4a4c]'}`}
+            >
+              <span className={`absolute top-[2px] left-[2px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${calibrateOnExhaust ? 'translate-x-[16px]' : 'translate-x-0'}`} />
+            </button>
+          </div>
+
+          {/* Quota Display: 智能阈值开启时显示学习上限（只读），关闭时显示手动输入 */}
+          <div className="flex items-center justify-between py-1 px-0.5">
+            <div className="flex items-center gap-1">
+              <span className="text-[12px] font-medium text-slate-700 dark:text-white">
+                额度上限
+                {autoThreshold && <span className="ml-1 text-[9px] text-blue-500 dark:text-[#4daafc] font-normal">自动</span>}
+              </span>
+              <SettingsInfo text={autoThreshold ? '根据学习到的额度上限自动设置' : '用于大数字变色和折线图红线'} />
+            </div>
+            <div className="flex items-center gap-1">
+              {autoThreshold ? (
+                <span className="w-7 text-center text-[12px] font-bold text-blue-600 dark:text-[#4daafc]">{learnedQuota > 0 ? learnedQuota : '?'}</span>
+              ) : (
+                <>
+                  <RepeatButton
+                    onClick={() => {
+                      const v = Math.max(1, manualQuota - 1);
+                      setManualQuota(v);
+                      if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetManualQuota(v);
+                    }}
+                    className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors select-none"
+                  >
+                    <Minus size={10} />
+                  </RepeatButton>
+                  <span className="w-7 text-center text-[12px] font-bold text-blue-600 dark:text-[#4daafc]">{manualQuota}</span>
+                  <RepeatButton
+                    onClick={() => {
+                      const v = manualQuota + 1;
+                      setManualQuota(v);
+                      if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetManualQuota(v);
+                    }}
+                    className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors select-none"
+                  >
+                    <Plus size={10} />
+                  </RepeatButton>
+                </>
+              )}
+            </div>
+          </div>
 
           {/* Warning Threshold Setting */}
           <div className="flex items-center justify-between py-1 px-0.5 border-t border-slate-100 dark:border-[#3a3a3c] mt-1 pt-1.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">
                 提醒阈值
                 {autoThreshold && <span className="ml-1 text-[9px] text-blue-500 dark:text-[#4daafc] font-normal">自动</span>}
               </span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">
-                {autoThreshold ? `学习上限 ${learnedQuota || '?'} - 10` : '达到此数值显示黄色提醒'}
-              </span>
+              <SettingsInfo text={autoThreshold ? `学习上限 ${learnedQuota || 43} - 10` : '达到此数值显示黄色提醒'} />
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  if (autoThreshold) return;
-                  const v = Math.max(10, warningThreshold - 5);
-                  setWarningThreshold(v);
-                  if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetWarningThreshold(v);
-                }}
-                disabled={autoThreshold}
-                className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${autoThreshold ? 'bg-gray-100 dark:bg-[#2d2d2d] text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] text-slate-600 dark:text-white'}`}
-              >
-                <Minus size={10} />
-              </button>
-              <span className="w-7 text-center text-[12px] font-bold text-amber-600 dark:text-amber-400">{warningThreshold}</span>
-              <button
-                onClick={() => {
-                  if (autoThreshold) return;
-                  const v = Math.min(alertThreshold - 5, warningThreshold + 5);
-                  setWarningThreshold(v);
-                  if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetWarningThreshold(v);
-                }}
-                disabled={autoThreshold}
-                className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${autoThreshold ? 'bg-gray-100 dark:bg-[#2d2d2d] text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] text-slate-600 dark:text-white'}`}
-              >
-                <Plus size={10} />
-              </button>
+              {autoThreshold ? (
+                <span className="w-7 text-center text-[12px] font-bold text-slate-400 dark:text-gray-500">{(learnedQuota || 43) - 10}</span>
+              ) : (
+                <>
+                  <RepeatButton
+                    onClick={() => {
+                      const v = Math.max(1, warningThreshold - 1);
+                      setWarningThreshold(v);
+                      if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetWarningThreshold(v);
+                    }}
+                    className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors select-none"
+                  >
+                    <Minus size={10} />
+                  </RepeatButton>
+                  <span className="w-7 text-center text-[12px] font-bold text-amber-600 dark:text-amber-400">{warningThreshold}</span>
+                  <RepeatButton
+                    onClick={() => {
+                      const v = Math.min(alertThreshold, warningThreshold + 1);
+                      setWarningThreshold(v);
+                      if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetWarningThreshold(v);
+                    }}
+                    className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors select-none"
+                  >
+                    <Plus size={10} />
+                  </RepeatButton>
+                </>
+              )}
             </div>
           </div>
 
           {/* Alert Threshold Setting */}
           <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex flex-col">
+            <div className="flex items-center gap-1">
               <span className="text-[12px] font-medium text-slate-700 dark:text-white">
                 警告阈值
                 {autoThreshold && <span className="ml-1 text-[9px] text-blue-500 dark:text-[#4daafc] font-normal">自动</span>}
               </span>
-              <span className="text-[9px] text-slate-400 dark:text-gray-500 mt-0.5">
-                {autoThreshold ? `学习上限 ${learnedQuota || '?'} - 5` : '达到此数值显示红色警告'}
-              </span>
+              <SettingsInfo text={autoThreshold ? `学习上限 ${learnedQuota || 43} - 5` : '达到此数值显示红色警告'} />
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => {
-                  if (autoThreshold) return;
-                  const v = Math.max(warningThreshold + 5, alertThreshold - 5);
-                  setAlertThreshold(v);
-                  if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetAlertThreshold(v);
-                }}
-                disabled={autoThreshold}
-                className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${autoThreshold ? 'bg-gray-100 dark:bg-[#2d2d2d] text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] text-slate-600 dark:text-white'}`}
-              >
-                <Minus size={10} />
-              </button>
-              <span className="w-7 text-center text-[12px] font-bold text-red-600 dark:text-red-400">{alertThreshold}</span>
-              <button
-                onClick={() => {
-                  if (autoThreshold) return;
-                  const v = Math.min(100, alertThreshold + 5);
-                  setAlertThreshold(v);
-                  if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetAlertThreshold(v);
-                }}
-                disabled={autoThreshold}
-                className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${autoThreshold ? 'bg-gray-100 dark:bg-[#2d2d2d] text-gray-300 dark:text-gray-600 cursor-not-allowed' : 'bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] text-slate-600 dark:text-white'}`}
-              >
-                <Plus size={10} />
-              </button>
+              {autoThreshold ? (
+                <span className="w-7 text-center text-[12px] font-bold text-slate-400 dark:text-gray-500">{(learnedQuota || 43) - 5}</span>
+              ) : (
+                <>
+                  <RepeatButton
+                    onClick={() => {
+                      const v = Math.max(warningThreshold, alertThreshold - 1);
+                      setAlertThreshold(v);
+                      if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetAlertThreshold(v);
+                    }}
+                    className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors select-none"
+                  >
+                    <Minus size={10} />
+                  </RepeatButton>
+                  <span className="w-7 text-center text-[12px] font-bold text-red-600 dark:text-red-400">{alertThreshold}</span>
+                  <RepeatButton
+                    onClick={() => {
+                      const v = alertThreshold + 1;
+                      setAlertThreshold(v);
+                      if ((window as any)?.go?.main?.App) (window as any).go.main.App.SetAlertThreshold(v);
+                    }}
+                    className="w-5 h-5 rounded bg-gray-100 dark:bg-[#3a3a3c] hover:bg-gray-200 dark:hover:bg-[#4a4a4c] flex items-center justify-center text-slate-600 dark:text-white transition-colors select-none"
+                  >
+                    <Plus size={10} />
+                  </RepeatButton>
+                </>
+              )}
             </div>
           </div>
 
@@ -2305,10 +2439,19 @@ const App: React.FC = () => {
             }`}>
               <div className="flex items-center justify-between">
                 <span className="font-medium">
-                  {quotaInfo.is_exhausted ? '额度已耗尽' : `今日: ${activeAccount?.total ?? 0} / 上限: ${quotaInfo.quota}`}
+                  {quotaInfo.is_exhausted
+                    ? `额度已耗尽${quotaInfo.dimension ? ` (${quotaInfo.dimension === 'daily' ? '日' : '周'})` : ''}`
+                    : `今日: ${activeAccount?.total ?? 0} / 上限: ${quotaInfo.quota}`}
                 </span>
                 <span className="text-[9px] opacity-70">{quotaInfo.identity_str || 'Free'}</span>
               </div>
+              {(quotaInfo.daily_quota > 0 || quotaInfo.weekly_quota > 0) && (
+                <div className="mt-0.5 text-[10px] opacity-80">
+                  {quotaInfo.daily_quota > 0 && `日: ${quotaInfo.daily_used}/${quotaInfo.daily_quota}`}
+                  {quotaInfo.daily_quota > 0 && quotaInfo.weekly_quota > 0 && ' | '}
+                  {quotaInfo.weekly_quota > 0 && `周: ${quotaInfo.weekly_used}/${quotaInfo.weekly_quota}`}
+                </div>
+              )}
               {quotaInfo.fast_request_per > 0 && (
                 <div className="mt-0.5 text-[10px] opacity-80">
                   快速请求剩余: {quotaInfo.fast_request_per}

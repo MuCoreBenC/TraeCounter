@@ -38,6 +38,10 @@ export function GetAutoThreshold() {
   return window['go']['main']['App']['GetAutoThreshold']();
 }
 
+export function GetCalibrateOnExhaust() {
+  return window['go']['main']['App']['GetCalibrateOnExhaust']();
+}
+
 export function GetControlStripPinned() {
   return window['go']['main']['App']['GetControlStripPinned']();
 }
@@ -100,6 +104,10 @@ export function GetShowAllAccounts() {
 
 export function GetTheme() {
   return window['go']['main']['App']['GetTheme']();
+}
+
+export function GetThisWeekHistory(arg1) {
+  return window['go']['main']['App']['GetThisWeekHistory'](arg1);
 }
 
 export function GetTodayCount() {
@@ -204,6 +212,10 @@ export function SetAutoLaunch(arg1) {
 
 export function SetAutoThreshold(arg1) {
   return window['go']['main']['App']['SetAutoThreshold'](arg1);
+}
+
+export function SetCalibrateOnExhaust(arg1) {
+  return window['go']['main']['App']['SetCalibrateOnExhaust'](arg1);
 }
 
 export function SetControlStripPinned(arg1) {
