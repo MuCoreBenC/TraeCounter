@@ -725,7 +725,6 @@ const App: React.FC = () => {
   const [manualQuota, setManualQuota] = useState(43);
   const [dayOffset, setDayOffset] = useState(0); // 0=今天, 1=昨天, 2=前天...
   const [showAllAccounts, setShowAllAccounts] = useState(false); // 是否显示当天无数据的账号
-  const [calibrateOnExhaust, setCalibrateOnExhaust] = useState(false); // 到达上限后校准计数并锁定
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const settingsRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -1042,9 +1041,6 @@ const App: React.FC = () => {
       (window as any).go.main.App.GetShowAllAccounts().then((v: boolean) => {
         setShowAllAccounts(v);
       }).catch(() => {});
-      (window as any).go.main.App.GetCalibrateOnExhaust().then((v: boolean) => {
-        setCalibrateOnExhaust(v);
-      }).catch(() => {});
     }
     // Listen for system theme changes when in "system" mode
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1338,11 +1334,7 @@ const App: React.FC = () => {
                 const count = isWeekView
                   ? weekTotal
                   : (dayOffset > 0 ? historicalTotal : (activeAccount?.total || 0));
-                // 额度校准：到达上限后锁定在服务端精确值
-                const isCalibrated = calibrateOnExhaust && !isWeekView && dayOffset === 0 &&
-                  quotaInfo?.is_exhausted && quotaInfo?.next_flash > 0 &&
-                  Date.now() < quotaInfo.next_flash;
-                const displayCount = isCalibrated ? (quotaInfo?.used || count) : count;
+                const displayCount = count;
                 // Only use effectiveQuota for color — quotaInfo.is_exhausted is global (current Trae user)
                 // and may not match the account being viewed
                 // 本周视图不显示额度颜色（额度是按天计算的）
@@ -1365,14 +1357,9 @@ const App: React.FC = () => {
                         setDayOffset(0);
                       }
                     }}
-                    title={isWeekView ? '点击查看今日数量' : isCalibrated ? '已校准：服务端精确值' : '点击查看本周数量'}
+                    title={isWeekView ? '点击查看今日数量' : '点击查看本周数量'}
                   >
                     {displayCount}
-                    {isCalibrated && (
-                      <span className="absolute -top-1 -right-3 text-[9px] font-medium text-blue-500 dark:text-[#4daafc] bg-blue-50 dark:bg-blue-900/20 px-1 py-0.5 rounded-full whitespace-nowrap">
-                        已校准
-                      </span>
-                    )}
                   </div>
                 );
               })()}
@@ -2287,26 +2274,6 @@ const App: React.FC = () => {
               className={`relative w-[36px] h-[20px] rounded-full transition-colors duration-200 shrink-0 ${autoThreshold ? 'bg-blue-500' : 'bg-slate-300 dark:bg-[#4a4a4c]'}`}
             >
               <span className={`absolute top-[2px] left-[2px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${autoThreshold ? 'translate-x-[16px]' : 'translate-x-0'}`} />
-            </button>
-          </div>
-
-          {/* 额度校准：到达上限后用服务端精确值校准并锁定 */}
-          <div className="flex items-center justify-between py-1 px-0.5">
-            <div className="flex items-center gap-1">
-              <span className="text-[12px] font-medium text-slate-700 dark:text-white">额度校准</span>
-              <SettingsInfo text="到达上限后，用服务端的精确数值校准计数，并停止增加" />
-            </div>
-            <button
-              onClick={async () => {
-                const newVal = !calibrateOnExhaust;
-                if ((window as any)?.go?.main?.App) {
-                  await (window as any).go.main.App.SetCalibrateOnExhaust(newVal);
-                  setCalibrateOnExhaust(newVal);
-                }
-              }}
-              className={`relative w-[36px] h-[20px] rounded-full transition-colors duration-200 shrink-0 ${calibrateOnExhaust ? 'bg-blue-500' : 'bg-slate-300 dark:bg-[#4a4a4c]'}`}
-            >
-              <span className={`absolute top-[2px] left-[2px] w-[16px] h-[16px] bg-white rounded-full shadow-sm transition-transform duration-200 ${calibrateOnExhaust ? 'translate-x-[16px]' : 'translate-x-0'}`} />
             </button>
           </div>
 

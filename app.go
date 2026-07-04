@@ -84,6 +84,8 @@ func (a *App) startup(ctx context.Context) {
 
 	// Set up current user changed callback — notifies frontend when the active Trae user changes
 	a.counter.SetOnCurrentUserChanged(func(userID string) {
+		// 切换账号时清空 quota 缓存，避免显示上一个账号的额度信息
+		traedb.InvalidateQuotaCache()
 		if a.ctx != nil {
 			runtime.EventsEmit(a.ctx, "currentUserChanged", userID)
 		}
